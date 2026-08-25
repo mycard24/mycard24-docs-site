@@ -4,26 +4,12 @@ import {themes as prismThemes} from 'prism-react-renderer';
 
 // Runs in Node.js — no browser APIs or JSX here.
 
-const DOCS_REPO = 'https://github.com/mycard24/mycard24-docs';
-const DOCS_BRANCH = 'production';
-
 // Algolia stays optional: the site must build without credentials so forks, previews and local runs
 // work unchanged. Search simply disappears when the variables are absent.
 const algoliaAppId = process.env.DOCSEARCH_APP_ID;
 const algoliaApiKey = process.env.DOCSEARCH_API_KEY;
 const algoliaIndexName = process.env.DOCSEARCH_INDEX_NAME;
 const hasAlgolia = Boolean(algoliaAppId && algoliaApiKey && algoliaIndexName);
-
-/**
- * Content lives in a separate repository, so "edit this page" has to point there rather than at this
- * engine repo. The locale branch is already here so that adding a translation later is a change to
- * `i18n.locales` and nothing else — translations sit under a different path from the Russian source.
- */
-function editUrl({locale, docPath}: {locale: string; docPath: string}): string {
-  return locale === 'ru'
-    ? `${DOCS_REPO}/edit/${DOCS_BRANCH}/docs/${docPath}`
-    : `${DOCS_REPO}/edit/${DOCS_BRANCH}/i18n/${locale}/docusaurus-plugin-content-docs/current/${docPath}`;
-}
 
 const config: Config = {
   title: 'МояКарта24',
@@ -76,7 +62,7 @@ const config: Config = {
   i18n: {
     // Russian only for now, and it is the binding version of every legal document. The engine is
     // already wired for more: adding a locale here plus its files in the content repo is the whole
-    // change — editUrl, the navbar dropdown below and the CI check all follow from this list.
+    // change — the navbar dropdown below and the CI check both follow from this list.
     defaultLocale: 'ru',
     locales: ['ru'],
     localeConfigs: {
@@ -93,7 +79,10 @@ const config: Config = {
           // short, quotable URLs (docs.mycard24.ru/legal/privacy_policy/).
           routeBasePath: '/',
           sidebarPath: './sidebars.ts',
-          editUrl,
+          // Deliberately no editUrl. What this site publishes is binding legal text — an offer, a
+          // consent, a privacy policy — and "edit this page" invites a reader to propose changes to
+          // it. The repository links in the footer were removed for the same reason: the audience
+          // here is a customer reading the terms, not a contributor.
           // Deliberately no showLastUpdateTime: pages are copied in from the content repo during the
           // build, so git here would report when CI moved the file, not when the text changed. Legal
           // documents carry their own effective date in the body, which is the date that counts.
@@ -157,13 +146,6 @@ const config: Config = {
           items: [
             {label: 'mycard24.ru', href: 'https://mycard24.ru'},
             {label: 'info@mycard24.ru', href: 'mailto:info@mycard24.ru'},
-          ],
-        },
-        {
-          title: 'Репозитории',
-          items: [
-            {label: 'Контент документации', href: DOCS_REPO},
-            {label: 'Сайт документации', href: 'https://github.com/mycard24/mycard24-docs-site'},
           ],
         },
       ],
