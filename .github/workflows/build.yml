@@ -1,0 +1,104 @@
+name: Build
+
+# The one place the site is ever built. CI and Deploy both call it so that what gets published is
+# produced by exactly the steps that were validated on develop and in the pull request.
+
+on:
+  workflow_call:
+    inputs:
+      docs_ref:
+        description: Branch of mycard24-docs to build the pages from.
+        required: true
+        type: string
+      upload_pages:
+        description: Upload build/ as the GitHub Pages artifact for a deploy job to publish.
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      DOCS_REPO_TOKEN:
+        description: Only needed while mycard24-docs is private; the default token can read it while
+          it is public.
+        required: false
+      DOCSEARCH_APP_ID:
+        required: false
+      DOCSEARCH_API_KEY:
+        required: false
+      DOCSEARCH_INDEX_NAME:
+        required: false
+
+env:
+  DOCS_REPO: mycard24/mycard24-docs
+
+jobs:
+  build:
+    name: Build (content @ ${{ inputs.docs_ref }})
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check out the content
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.DOCS_REPO }}
+          ref: ${{ inputs.docs_ref }}
+          path: external-docs
+          token: ${{ secrets.DOCS_REPO_TOKEN || github.token }}
+
+      - name: Replace docs and translations with the content repo
+        run: |
+          set -euo pipefail
+          # An empty or half-cloned content repo would otherwise build a site consisting of the
+          # local placeholder page and publish it over the real one.
+          test -f external-docs/docs/index.md \
+            || { echo "::error::content repo has no docs/index.md — refusing to build"; exit 1; }
+          rm -rf docs i18n
+          mv external-docs/docs ./docs
+          [ -d external-docs/i18n ] && mv external-docs/i18n ./i18n || true
+          rm -rf external-docs
+
+      - run: npm run typecheck
+
+      - run: npm run build
+        env:
+          DOCSEARCH_APP_ID: ${{ secrets.DOCSEARCH_APP_ID }}
+          DOCSEARCH_API_KEY: ${{ secrets.DOCSEARCH_API_KEY }}
+          DOCSEARCH_INDEX_NAME: ${{ secrets.DOCSEARCH_INDEX_NAME }}
+
+      - name: Verify the pages that must never 404
+        run: |
+          set -euo pipefail
+          for path in \
+            build/index.html \
+            build/legal/offer/index.html \
+            build/legal/terms/index.html \
+            build/legal/consent/index.html \
+            build/legal/privacy_policy/index.html \
+            build/legal/cookies/index.html
+          do
+            test -f "$path" || { echo "::error::missing $path"; exit 1; }
+          done
+
+          # Without CNAME in the artifact, Pages drops the custom domain on every deploy and
+          # docs.mycard24.ru starts answering with a certificate error.
+          grep -qx 'docs.mycard24.ru' build/CNAME \
+            || { echo "::error::build/CNAME is missing or wrong — the custom domain would be lost"; exit 1; }
+
+          echo "every required page is present"
+
+      - name: Upload the Pages artifact
+        if: inputs.upload_pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build

@@ -1,0 +1,25 @@
+name: CI
+
+# Validation only — nothing is published here. Deploy owns the publish.
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop, production]
+  # Fired by mycard24-docs when its develop content changes, so a draft that breaks the build is
+  # caught before anyone promotes it.
+  workflow_dispatch:
+
+# A newer push to the same branch makes an in-flight run pointless; cancel it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # A pull request is validated against production content — that is what a merge will ship.
+    # Everything else here is develop, against develop content.
+    uses: ./.github/workflows/build.yml
+    with:
+      docs_ref: ${{ github.event_name == 'pull_request' && 'production' || 'develop' }}
+    secrets: inherit

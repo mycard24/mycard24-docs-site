@@ -1,0 +1,80 @@
+/* МояКарта24 docs theme. Kept deliberately small — Infima defaults carry the rest. */
+
+/* The brand triad is amber → magenta → cyan (see the mark in static/img/logo.svg). Magenta is the
+   one that carries meaning, so it becomes the link colour; the other two survive only in the
+   gradients below. The landing's #ec1e79 reaches just 4.18:1 on white, short of AA for body text,
+   so link text uses a darkened stop of the same hue instead. */
+:root {
+  --ifm-color-primary: #d4176d; /* 5.07:1 on white — AA for body-size link text */
+  --ifm-color-primary-dark: #bf1462;
+  --ifm-color-primary-darker: #b4135c;
+  --ifm-color-primary-darkest: #94104c;
+  --ifm-color-primary-light: #e91d79;
+  --ifm-color-primary-lighter: #ee2b83;
+  --ifm-color-primary-lightest: #f1509a;
+  --ifm-code-font-size: 95%;
+}
+
+/* The light-mode magenta only reaches 2.6:1 on Infima's dark surface, so dark mode gets its own
+   lighter base rather than reusing the same hue. */
+[data-theme='dark'] {
+  --ifm-color-primary: #f9598f; /* 5.61:1 on #1b1b1d */
+  --ifm-color-primary-dark: #f83679;
+  --ifm-color-primary-darker: #f7256e;
+  --ifm-color-primary-darkest: #db0d55;
+  --ifm-color-primary-light: #fa7ca5;
+  --ifm-color-primary-lighter: #fb8db0;
+  --ifm-color-primary-lightest: #fdc0d3;
+}
+
+/* Inter is the landing's face. Not pulled from the Google Fonts CDN and not bundled either: this
+   site carries the legal pages of an RKN-registered personal data operator, so a third-party font
+   request would disclose every visitor's IP to a foreign processor on each page view — and a
+   self-hosted variable Inter would cost ~100 KB to say "МояКарта24" in the navbar. The system
+   stack is close enough for running text and costs nothing. */
+.navbar__title {
+  font-weight: 700;
+  font-size: 1.15rem;
+  letter-spacing: -0.015em;
+}
+
+/* Legal pages are long prose; give tables the full measure rather than Infima's inline-block. */
+.markdown table {
+  display: table;
+  width: 100%;
+}
+
+.footer__copyright {
+  font-size: 0.85rem;
+  opacity: 0.85;
+  line-height: 1.6;
+}
+
+/* The only action on a reading site, so it reads as a button rather than another navbar link.
+   Sized from the navbar link's own padding so it lines up with whatever sits beside it. */
+.navbar__item--cta {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.35rem;
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  background-image: linear-gradient(115deg, #fb6d3a, #ec1e79);
+  color: #fff;
+  font-weight: 600;
+  transition: filter 120ms ease, transform 120ms ease;
+}
+
+.navbar__item--cta:hover {
+  color: #fff;
+  text-decoration: none;
+  filter: brightness(1.06);
+  transform: translateY(-1px);
+}
+
+/* In the mobile drawer the items are full-width rows; a pill there would look like a stray button. */
+.navbar-sidebar .navbar__item--cta {
+  display: block;
+  margin-left: 0;
+  border-radius: var(--ifm-global-radius);
+  text-align: center;
+}

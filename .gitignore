@@ -1,0 +1,10 @@
+.DS_Store
+node_modules/
+.docusaurus/
+build/
+external-docs/
+*.log
+.env.local
+
+# Content, cloned in at build time from mycard24-docs.
+/i18n/

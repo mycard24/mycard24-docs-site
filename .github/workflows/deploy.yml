@@ -1,0 +1,41 @@
+name: Deploy
+
+# Publishes production to GitHub Pages at docs.mycard24.ru.
+on:
+  push:
+    branches: [production]
+  # Fired by mycard24-docs when its production content changes: the engine commit has not moved, so
+  # there is nothing to push here — the site simply has to be rebuilt against the new text.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Pages allows one deployment at a time. Queue rather than cancel: an interrupted publish leaves the
+# site on a half-uploaded artifact.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      docs_ref: production
+      upload_pages: true
+    secrets: inherit
+
+  deploy:
+    name: Publish to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
