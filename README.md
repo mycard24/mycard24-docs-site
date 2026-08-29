@@ -61,28 +61,42 @@ engine sha against the new text.
 
 ## Runtime
 
-GitHub Pages serves the static output; there is no server and no container. Pages handles TLS for
-`docs.mycard24.ru` and applies its own caching, so unlike the API there is no nginx config here.
+The built site is baked into an image and served by `static-web-server` (~5 MB) on the same VPS as
+the API, behind the host nginx. **This replaced GitHub Pages.** One machine now terminates TLS for
+`mycard24.ru`, `docs`, `api` and `app`, with a single wildcard certificate issued by acme.sh over
+the Cloudflare DNS API and renewed from cron.
 
-`static/CNAME` is what binds the custom domain, and it must reach the artifact on every deploy —
-Pages drops the domain otherwise. The build fails rather than publishing without it.
+The container does not run nginx: nginx is already in front as TLS terminator and router, and a
+second one inside would mean two configs for the same routing with only the outer one visible to
+`nginx -t`. So the container serves files, and the vhost owns the 404 page and the cache policy —
+HTML revalidates, because a legal document must never be served stale after it changes, while
+fingerprinted assets stay immutable for a year.
+
+Details in [deploy/README.md](deploy/README.md).
 
 ## One-time repository setup
 
-1. **Settings → Pages → Source: GitHub Actions.**
-2. **Settings → Pages → Custom domain:** `docs.mycard24.ru`, then tick **Enforce HTTPS** once the
-   certificate is issued.
-3. **DNS:** `CNAME docs.mycard24.ru → mycard24.github.io`. (The apex `mycard24.ru` uses A records to
-   `185.199.108–111.153` and belongs to the landing repo — leave it alone.)
-4. **Settings → Branches:** default branch `develop`; protect `production`.
+On the repository's **production** environment:
+
+| Kind | Name | Value |
+|---|---|---|
+| Secret | `SSH_KEY` | the deploy key's private half |
+| Variable | `SSH_HOST` | `api.mycard24.ru` |
+| Variable | `SSH_USER` | `root` |
+| Variable | `SSH_PORT` | `48802` — **not 22** |
+| Variable | `PROD_ENV` | the body of `prod.env.example` |
+
+And optionally, as repository secrets:
 
 | Kind | Name | Purpose |
 | --- | --- | --- |
-| Secret (optional) | `DOCS_REPO_TOKEN` | only if mycard24-docs is made private |
-| Secret (optional) | `DOCSEARCH_APP_ID`, `DOCSEARCH_API_KEY`, `DOCSEARCH_INDEX_NAME` | enables Algolia search |
+| Secret | `DOCS_REPO_TOKEN` | only if mycard24-docs is made private |
+| Secret | `DOCSEARCH_APP_ID`, `DOCSEARCH_API_KEY`, `DOCSEARCH_INDEX_NAME` | enables Algolia search |
 
-Search is optional by design: without those three variables the site builds and serves normally,
-minus the search box.
+Search is optional by design: without those three the site builds and serves normally, minus the
+search box.
+
+Set the default branch to `develop` and protect `production`.
 
 ## Icons
 
