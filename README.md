@@ -42,9 +42,9 @@ it, so what gets published is produced by exactly the steps that were validated.
 | Trigger | What happens |
 | --- | --- |
 | push to engine `develop`, or a PR | build against docs `develop` (a PR builds against `production`) |
-| push to engine `production` | build against docs `production`, then publish to Pages |
+| push to engine `production` | build against docs `production`, then build an image and deploy it |
 | push to **content** `develop` | content repo dispatches CI here on `develop` — build only |
-| push to **content** `production` | content repo dispatches Deploy here on `production` — build and publish |
+| push to **content** `production` | content repo dispatches Deploy here on `production` — build and deploy |
 
 Content follows the engine branch: a build on `develop` clones docs `develop`, a build on
 `production` clones docs `production`. Pull requests build against `production` content, since that
