@@ -1,0 +1,39 @@
+name: Stage content
+description: >
+  Clones mycard24-docs into ./docs (and ./i18n) so a build has pages to render. The Markdown lives
+  in that repo, not this one, so every build — CI, and the image CD publishes — has to do this
+  first. It is a composite action rather than repeated steps because the two callers must stage the
+  content identically, or the image would ship something CI never validated.
+
+inputs:
+  docs_ref:
+    description: Branch of mycard24-docs to take the pages from.
+    required: true
+  token:
+    description: Only needed while mycard24-docs is private; the default token can read it while it is public.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Check out the content
+      uses: actions/checkout@v5
+      with:
+        repository: mycard24/mycard24-docs
+        ref: ${{ inputs.docs_ref }}
+        path: external-docs
+        token: ${{ inputs.token || github.token }}
+
+    - name: Replace docs and translations with the content repo
+      shell: bash
+      run: |
+        set -euo pipefail
+        # An empty or half-cloned content repo would otherwise build a site consisting of the local
+        # placeholder page and publish it over the real one.
+        test -f external-docs/docs/index.md \
+          || { echo "::error::content repo has no docs/index.md — refusing to build"; exit 1; }
+        rm -rf docs i18n
+        mv external-docs/docs ./docs
+        [ -d external-docs/i18n ] && mv external-docs/i18n ./i18n || true
+        rm -rf external-docs

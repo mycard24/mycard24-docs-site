@@ -1,0 +1,9 @@
+.git
+.github
+node_modules
+build
+.docusaurus
+external-docs
+deploy
+*.log
+.env.local

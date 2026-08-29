@@ -10,11 +10,6 @@ on:
         description: Branch of mycard24-docs to build the pages from.
         required: true
         type: string
-      upload_pages:
-        description: Upload build/ as the GitHub Pages artifact for a deploy job to publish.
-        required: false
-        default: false
-        type: boolean
     secrets:
       DOCS_REPO_TOKEN:
         description: Only needed while mycard24-docs is private; the default token can read it while
@@ -26,9 +21,6 @@ on:
         required: false
       DOCSEARCH_INDEX_NAME:
         required: false
-
-env:
-  DOCS_REPO: mycard24/mycard24-docs
 
 jobs:
   build:
@@ -48,25 +40,10 @@ jobs:
 
       - run: npm ci
 
-      - name: Check out the content
-        uses: actions/checkout@v5
+      - uses: ./.github/actions/stage-content
         with:
-          repository: ${{ env.DOCS_REPO }}
-          ref: ${{ inputs.docs_ref }}
-          path: external-docs
-          token: ${{ secrets.DOCS_REPO_TOKEN || github.token }}
-
-      - name: Replace docs and translations with the content repo
-        run: |
-          set -euo pipefail
-          # An empty or half-cloned content repo would otherwise build a site consisting of the
-          # local placeholder page and publish it over the real one.
-          test -f external-docs/docs/index.md \
-            || { echo "::error::content repo has no docs/index.md — refusing to build"; exit 1; }
-          rm -rf docs i18n
-          mv external-docs/docs ./docs
-          [ -d external-docs/i18n ] && mv external-docs/i18n ./i18n || true
-          rm -rf external-docs
+          docs_ref: ${{ inputs.docs_ref }}
+          token: ${{ secrets.DOCS_REPO_TOKEN }}
 
       - run: npm run typecheck
 
@@ -90,15 +67,4 @@ jobs:
             test -f "$path" || { echo "::error::missing $path"; exit 1; }
           done
 
-          # Without CNAME in the artifact, Pages drops the custom domain on every deploy and
-          # docs.mycard24.ru starts answering with a certificate error.
-          grep -qx 'docs.mycard24.ru' build/CNAME \
-            || { echo "::error::build/CNAME is missing or wrong — the custom domain would be lost"; exit 1; }
-
           echo "every required page is present"
-
-      - name: Upload the Pages artifact
-        if: inputs.upload_pages
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: build

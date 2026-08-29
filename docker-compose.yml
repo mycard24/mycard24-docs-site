@@ -1,0 +1,35 @@
+# Production stack for the docs site. This is the ONLY compose file CD copies to the server.
+#
+# One container, no database, no volumes: the built site is baked into the image, so the image tag
+# IS the release — engine commit plus content commit, resolved at build time.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  mycard24-docs-site:
+    #   ROLLBACK: set IMAGE_TAG to a previous commit SHA in .env, then
+    #             `docker compose pull && docker compose up -d`. Or re-run Deploy with that SHA.
+    image: ${IMAGE:-ghcr.io/mycard24/mycard24-docs-site}:${IMAGE_TAG:-latest}
+    pull_policy: always
+    container_name: mycard24-docs-site
+    restart: unless-stopped
+    logging: *default-logging
+
+    ports:
+      - "127.0.0.1:${DOCS_PORT:-8088}:8080"
+
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/static-web-server", "--version"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+    deploy:
+      resources:
+        limits:
+          memory: ${DOCS_MEMORY_LIMIT:-128M}

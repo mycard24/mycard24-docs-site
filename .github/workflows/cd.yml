@@ -1,0 +1,154 @@
+name: CD
+
+# production only. Build the image once, push it to GHCR, then point the server at that exact tag.
+#
+# Replaces the GitHub Pages deploy. The site now lives on the same VPS as the API, behind the
+# host nginx — one place terminating TLS, one wildcard certificate to renew.
+# Deploys never build on the server: the artifact that ships is the one CI produced.
+on:
+  push:
+    branches: [production]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Commit SHA to deploy. Empty deploys this run's commit; a past SHA rolls back.
+        required: false
+        default: ''
+
+# Never let two deploys touch the server at once, and never cancel one midway — an interrupted
+# `docker compose up` leaves the stack in an unknown state.
+concurrency:
+  group: cd-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish image to GHCR
+    runs-on: ubuntu-latest
+    # A rollback deploys an image that already exists; rebuilding it would defeat the point.
+    if: inputs.image_tag == ''
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      # The Markdown lives in mycard24-docs. The same composite action CI uses, so the image ships
+      # exactly what CI validated rather than a second, subtly different staging.
+      - uses: ./.github/actions/stage-content
+        with:
+          docs_ref: production
+          token: ${{ secrets.DOCS_REPO_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          # The package inherits the repository's visibility, so a private repo yields a private
+          # image. Confirm under Packages → mycard24-docs-site → Package settings after the first push.
+          images: ghcr.io/${{ github.repository }}
+          # `latest` is a convenience alias; the commit SHA is what a deploy pins to and what a
+          # rollback selects. Both point at this exact build.
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ github.sha }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+  deploy:
+    name: Deploy to server
+    needs: publish
+    # `needs` alone would skip this whenever publish is skipped, which is exactly the rollback case.
+    if: always() && !failure() && !cancelled()
+    runs-on: ubuntu-latest
+    # Scopes SSH_KEY (secret) and the SSH_*/DEPLOY_PATH/PROD_ENV variables to this environment, and
+    # is where a required-reviewer gate would attach if production deploys ever need approval.
+    environment: production
+    permissions:
+      contents: read
+      # The server logs into GHCR with this run's token to pull the private image.
+      packages: read
+    env:
+      SSH_PORT: ${{ vars.SSH_PORT || '22' }}
+      REMOTE: ${{ vars.SSH_USER }}@${{ vars.SSH_HOST }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/mycard24-docs-site' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Pin the host key so the deploy fails rather than trusting whatever answers on the port.
+          ssh-keyscan -p "$SSH_PORT" "${{ vars.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Sync compose file
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$REMOTE" "mkdir -p '$DEPLOY_PATH'"
+          scp -i ~/.ssh/deploy_key -P "$SSH_PORT" docker-compose.yml "$REMOTE:$DEPLOY_PATH/"
+
+      - name: Write .env
+        env:
+          # A repository/environment *variable*, not a secret — the bundle is static and the app
+          # holds no credentials of its own. Piped over stdin all the same, so it is never a
+          # command-line argument on the host and never echoed into the log.
+          PROD_ENV: ${{ vars.PROD_ENV }}
+          # IMAGE + IMAGE_TAG together name one exact build, so `docker compose up -d` runs precisely
+          # what CI published — and a rollback is one line in this file.
+          IMAGE: ghcr.io/${{ github.repository }}
+          IMAGE_TAG: ${{ inputs.image_tag || github.sha }}
+        run: |
+          printf '%s\nIMAGE=%s\nIMAGE_TAG=%s\n' "$PROD_ENV" "$IMAGE" "$IMAGE_TAG" \
+            | ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$REMOTE" \
+                "umask 077 && cat > '$DEPLOY_PATH/.env' && chmod 600 '$DEPLOY_PATH/.env'"
+
+      - name: Log the server into GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: |
+          # Piped over stdin so the token is never a command-line argument on the host. No
+          # `docker logout` afterwards: the cached credential is what makes a later manual pull —
+          # a rollback — work between deploys.
+          printf '%s' "$GHCR_TOKEN" \
+            | ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$REMOTE" \
+                "docker login ghcr.io -u '$GHCR_USER' --password-stdin"
+
+      - name: Pull and restart
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$REMOTE" \
+            "cd '$DEPLOY_PATH' \
+             && docker compose pull \
+             && docker compose up -d --remove-orphans \
+             && docker image prune -f"
+
+      - name: Verify the deploy is serving
+        run: |
+          # `up -d` returns as soon as the container starts, which says nothing about whether the
+          # site is reachable. Ask over HTTPS, the way a user would — that also catches a vhost that
+          # was never installed or an nginx that needs a reload.
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 https://docs.mycard24.ru/ || echo 000)
+          echo "GET https://docs.mycard24.ru/ -> $code"
+          [ "$code" = "200" ] || { echo "::error::docs.mycard24.ru answered $code"; exit 1; }
