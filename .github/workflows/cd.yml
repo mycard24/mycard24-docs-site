@@ -129,9 +129,19 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_USER: ${{ github.actor }}
         run: |
-          # Piped over stdin so the token is never a command-line argument on the host. No
-          # `docker logout` afterwards: the cached credential is what makes a later manual pull —
-          # a rollback — work between deploys.
+          # Piped over ssh stdin so the token is never a command-line argument on the host.
+          #
+          # This credential is good for this job and no longer: GITHUB_TOKEN dies with the run, so
+          # what is left behind in ~/.docker/config.json is already refused by the time anyone
+          # reaches for it. A manual `docker compose pull` on the server answers `denied` — that is
+          # measured, not assumed. The rollback path is therefore a dispatch of this workflow with
+          # `image_tag` set to an older SHA, which logs in afresh and skips build and publish
+          # because the image already exists. See deploy/README.md.
+          #
+          # Re-running a *stale* run's deploy job is unreliable for the same reason and should not
+          # be used either. On run 33255310011, re-run a day later, the login succeeded and
+          # `docker compose pull` pulled the tag, and then `up -d` was refused on that same tag
+          # three seconds afterwards. Dispatch, do not re-run.
           printf '%s' "$GHCR_TOKEN" \
             | ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" "$REMOTE" \
                 "docker login ghcr.io -u '$GHCR_USER' --password-stdin"

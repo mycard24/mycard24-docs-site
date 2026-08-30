@@ -38,18 +38,25 @@ not the same as a served site.
 
 The image is tagged by commit SHA and `.env` pins one exactly.
 
-**From GitHub** — Actions → CD → *Run workflow*, with the known-good SHA in `image_tag`. The build
-is skipped: that image already exists.
+**Dispatch the workflow** — Actions → CD → *Run workflow*, with the known-good SHA in `image_tag`.
+The build is skipped: that image already exists, and rebuilding it from today's source would defeat
+the point. This is the rollback path.
 
-**On the server**:
+**Not over ssh.** CD logs the server into GHCR with the deploy job's `GITHUB_TOKEN`, and GitHub
+revokes it when the run ends — so the credential left in `/root/.docker/config.json` is dead
+between deploys, and `docker compose pull` answers `denied` on this private image. `pull_policy:
+always` means that holds even for a tag already on disk. If GitHub is genuinely unreachable,
+authenticate first with a personal access token carrying `read:packages`:
 
 ```bash
+echo "$GHCR_PAT" | docker login ghcr.io -u <github-user> --password-stdin
 cd /opt/mycard24-docs-site
 sed -i 's/^IMAGE_TAG=.*/IMAGE_TAG=<known-good-sha>/' .env
 docker compose pull && docker compose up -d
 ```
 
-The next ordinary deploy overwrites `.env`, so this is a stopgap.
+No such token is kept on the server on purpose. The next ordinary deploy overwrites `.env`, so a
+server-side rollback is a stopgap — fix forward, or dispatch with the tag so the two agree.
 
 ## Required configuration
 
